@@ -23,5 +23,5 @@ Instead, I want to try solving problems on my own first to build confidence and 
 
 ## What is one request you have or change you suggest for this subject and/or your IT degree overall?
 
-...I have nothing to suggest. Everything is perfect. 
+I have nothing to suggest. Everything is perfect. 
 
