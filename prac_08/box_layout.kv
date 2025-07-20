@@ -1,0 +1,24 @@
+BoxLayout:
+    orientation: 'vertical'
+    size: root.width, root.height
+    spacing: 10
+    padding: 10
+
+    Button:
+        text: 'Greet'
+        on_press: app.handle_greet()
+
+    TextInput:
+        id: input_name
+        text: ''
+        hint_text: 'Enter your name'
+        multiline: False
+
+    Button:
+        text: 'Clear'
+        on_press: app.handle_clear()
+
+    Label:
+        id: output_label
+        text: 'Greeting will appear here'
+        color: (1, 1, 0, 1)
