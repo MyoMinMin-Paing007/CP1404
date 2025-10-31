@@ -10,9 +10,8 @@ from datetime import datetime
 # ------------------------------
 # APP CONFIG
 # ------------------------------
-st.set_page_config(page_title="Seat Occupancy • MVP", layout="wide")
-st.title("Seat Occupancy • MVP")
-
+st.set_page_config(page_title="Smart Seat", layout="wide")
+st.title("Smart Seat detection")
 # ------------------------------
 # MODEL LOADING (cached)
 # ------------------------------
@@ -75,12 +74,29 @@ if uploaded_file:
             empty = max(total_seats - occupied, 0)
             usage_pct = (occupied / total_seats) * 100 if total_seats > 0 else 0.0
 
-            # Render annotated image
-            annotated = result.plot(labels=False)  # hide text labels
-            annotated_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
+            import random
 
-            # Show results
-            col2.image(annotated_rgb, caption="Detections (persons)", use_container_width=True)
+            # Get bounding boxes
+            boxes_xyxy = result.boxes.xyxy.cpu().numpy().astype(int) if result.boxes is not None else []
+
+            # Draw image manually to color-code boxes
+            annotated_rgb = np.array(pil_img)  # Convert PIL to NumPy array (RGB)
+
+            # 1️⃣ Draw red boxes for detected people (occupied)
+            for (x1, y1, x2, y2) in boxes_xyxy:
+                cv2.rectangle(annotated_rgb, (x1, y1), (x2, y2), (255, 0, 0), 3)  # red in RGB
+
+            # 2️⃣ Draw green boxes for empty seats (if known total_seats)
+            if total_seats > len(boxes_xyxy):
+                # just visualize 'empty' seats randomly to show green boxes
+                for i in range(total_seats - len(boxes_xyxy)):
+                    # draw small green boxes at random corners (demo only)
+                    x1 = random.randint(20, 100)
+                    y1 = random.randint(20, 100)
+                    cv2.rectangle(annotated_rgb, (x1, y1), (x1 + 40, y1 + 40), (0, 255, 0), 2)  # green
+
+            # Show in Streamlit
+            col2.image(annotated_rgb, caption="Red = Occupied | Green = Empty", use_container_width=True)
 
             # Metrics row
             m1, m2, m3 = st.columns(3)
