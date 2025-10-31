@@ -10,119 +10,128 @@ from datetime import datetime
 # ------------------------------
 # APP CONFIG
 # ------------------------------
-st.set_page_config(page_title="Smart Seat", layout="wide")
-st.title("Smart Seat detection")
+st.set_page_config(page_title="Seat Occupancy • MVP", layout="wide")
+st.title("Seat Occupancy • MVP")
+
 # ------------------------------
-# MODEL LOADING (cached)
+# MODEL LOADING
 # ------------------------------
 @st.cache_resource
 def load_model():
-    # Use small, fast model for demo. Replace with your trained 'best.pt' later.
-    return YOLO("yolov8n.pt")
+    return YOLO("yolov8n.pt")  # small, fast COCO-pretrained model
 
 model = load_model()
 
 # ------------------------------
-# SIDEBAR CONTROLS
+# SIDEBAR SETTINGS
 # ------------------------------
 st.sidebar.header("Settings")
-total_seats = st.sidebar.number_input("Total seats in room", min_value=1, max_value=500, value=40, step=1)
 conf_thresh = st.sidebar.slider("Confidence threshold", 0.1, 0.9, 0.35, 0.05)
 iou_thresh = st.sidebar.slider("IoU threshold (NMS)", 0.1, 0.9, 0.45, 0.05)
 
 # ------------------------------
-# UPLOAD IMAGE
+# IMAGE UPLOAD
 # ------------------------------
 uploaded_file = st.file_uploader("Upload classroom image", type=["jpg", "jpeg", "png"])
 
 col1, col2 = st.columns(2, gap="large")
 
 if uploaded_file:
-    # Read image with PIL and show preview
     pil_img = Image.open(uploaded_file).convert("RGB")
     col1.image(pil_img, caption="Original image", use_container_width=True)
 
-    # Run detection
     if st.button("Run detection", type="primary"):
         with st.spinner("Running YOLO detection..."):
-            # Save to temp for Ultralytics predict()
+
+            # Save temp image
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
                 pil_img.save(tmp.name)
                 tmp_path = tmp.name
 
-            # Inference
+            # Run YOLO on person (0) + chair (56)
             results = model.predict(
                 source=tmp_path,
                 conf=conf_thresh,
                 iou=iou_thresh,
-                classes=[0],  # 0 = 'person' in COCO dataset
+                classes=[0, 56],  # detect only person and chair
                 verbose=False
             )
 
-            # Expect one image result for single upload
             result = results[0]
-
-            # Count 'person' class only (COCO class id/name is 'person')
-            # Ultralytics v8 stores boxes and class names in model.names
             names = model.names
             boxes = result.boxes
             cls_ids = boxes.cls.cpu().numpy().astype(int) if boxes is not None else np.array([])
-            person_label_ids = [k for k, v in names.items() if v == "person"]
-            person_count = int(np.sum(np.isin(cls_ids, person_label_ids))) if len(person_label_ids) > 0 else 0
 
-            occupied = person_count
-            empty = max(total_seats - occupied, 0)
-            usage_pct = (occupied / total_seats) * 100 if total_seats > 0 else 0.0
+            # Separate chair and person boxes
+            chairs = []
+            people = []
+            for box, cid in zip(boxes.xyxy.cpu().numpy().astype(int), cls_ids):
+                if names[cid] == "chair":
+                    chairs.append(box)
+                elif names[cid] == "person":
+                    people.append(box)
 
-            import random
+            # ------------------------------
+            # Helper function: IoU
+            # ------------------------------
+            def iou(boxA, boxB):
+                xA = max(boxA[0], boxB[0])
+                yA = max(boxA[1], boxB[1])
+                xB = min(boxA[2], boxB[2])
+                yB = min(boxA[3], boxB[3])
+                inter = max(0, xB - xA) * max(0, yB - yA)
+                if inter == 0:
+                    return 0.0
+                boxA_area = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
+                boxB_area = (boxB[2] - boxB[0]) * (boxB[3] - boxB[1])
+                return inter / float(boxA_area + boxB_area - inter)
 
-            # Get bounding boxes
-            boxes_xyxy = result.boxes.xyxy.cpu().numpy().astype(int) if result.boxes is not None else []
+            # ------------------------------
+            # Draw results manually
+            # ------------------------------
+            annotated_rgb = np.array(pil_img)
+            occupied = 0
 
-            # Draw image manually to color-code boxes
-            annotated_rgb = np.array(pil_img)  # Convert PIL to NumPy array (RGB)
+            for chair in chairs:
+                taken = False
+                for person in people:
+                    if iou(chair, person) > 0.2:  # overlap threshold
+                        taken = True
+                        break
+                color = (255, 0, 0) if taken else (0, 255, 0)  # red or green
+                cv2.rectangle(annotated_rgb, (chair[0], chair[1]), (chair[2], chair[3]), color, 3)
+                if taken:
+                    occupied += 1
 
-            # 1️⃣ Draw red boxes for detected people (occupied)
-            for (x1, y1, x2, y2) in boxes_xyxy:
-                cv2.rectangle(annotated_rgb, (x1, y1), (x2, y2), (255, 0, 0), 3)  # red in RGB
+            empty = len(chairs) - occupied
+            usage_pct = (occupied / len(chairs)) * 100 if len(chairs) > 0 else 0.0
 
-            # 2️⃣ Draw green boxes for empty seats (if known total_seats)
-            if total_seats > len(boxes_xyxy):
-                # just visualize 'empty' seats randomly to show green boxes
-                for i in range(total_seats - len(boxes_xyxy)):
-                    # draw small green boxes at random corners (demo only)
-                    x1 = random.randint(20, 100)
-                    y1 = random.randint(20, 100)
-                    cv2.rectangle(annotated_rgb, (x1, y1), (x1 + 40, y1 + 40), (0, 255, 0), 2)  # green
-
-            # Show in Streamlit
+            # ------------------------------
+            # DISPLAY OUTPUT
+            # ------------------------------
             col2.image(annotated_rgb, caption="Red = Occupied | Green = Empty", use_container_width=True)
 
-            # Metrics row
             m1, m2, m3 = st.columns(3)
             m1.metric("Occupied", occupied)
             m2.metric("Empty", empty)
             m3.metric("Usage", f"{usage_pct:.1f}%")
 
-            # Save outputs for download
+            # Save output for download
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             out_img_path = f"output_{timestamp}.jpg"
             Image.fromarray(annotated_rgb).save(out_img_path)
 
-            # Simple CSV summary
-            csv_path = f"summary_{timestamp}.csv"
-            with open(csv_path, "w") as f:
-                f.write("total_seats,occupied,empty,usage_percent\n")
-                f.write(f"{total_seats},{occupied},{empty},{usage_pct:.2f}\n")
+            st.download_button(
+                "Download annotated image",
+                data=open(out_img_path, "rb"),
+                file_name=out_img_path,
+                mime="image/jpeg"
+            )
 
-            st.download_button("Download annotated image", data=open(out_img_path, "rb"), file_name=out_img_path, mime="image/jpeg")
-            st.download_button("Download CSV summary", data=open(csv_path, "rb"), file_name=csv_path, mime="text/csv")
-
-            # Clean temp
             try:
                 os.remove(tmp_path)
             except Exception:
                 pass
 
 else:
-    st.info("Upload a classroom image (JPG/PNG) to start.")
+    st.info("Upload a classroom image (JPG/PNG) to start detection.")
