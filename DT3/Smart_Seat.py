@@ -10,8 +10,8 @@ from datetime import datetime
 # ------------------------------
 # APP CONFIG
 # ------------------------------
-st.set_page_config(page_title="Seat Occupancy • MVP", layout="wide")
-st.title("Seat Occupancy • MVP")
+st.set_page_config(page_title="Smart Seat", layout="wide")
+st.title("Smart Seat detection")
 
 # ------------------------------
 # MODEL LOADING
