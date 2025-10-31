@@ -56,6 +56,7 @@ if uploaded_file:
                 source=tmp_path,
                 conf=conf_thresh,
                 iou=iou_thresh,
+                classes=[0],  # 0 = 'person' in COCO dataset
                 verbose=False
             )
 
@@ -75,7 +76,7 @@ if uploaded_file:
             usage_pct = (occupied / total_seats) * 100 if total_seats > 0 else 0.0
 
             # Render annotated image
-            annotated = result.plot()  # numpy array (BGR)
+            annotated = result.plot(labels=False)  # hide text labels
             annotated_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
 
             # Show results
